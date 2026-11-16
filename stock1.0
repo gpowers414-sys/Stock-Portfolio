@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portfolio Tracker — Read-Only Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            bg: '#090d16',
+            card: '#111827',
+            border: '#1f2937',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #090d16; color: #f3f4f6; }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    /* Custom scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #090d16; }
+    ::-webkit-scrollbar-thumb { background: #1f2937; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #374151; }
+  </style>
+</head>
+<body class="min-h-screen antialiased selection:bg-emerald-500/30 selection:text-emerald-200">
+
+  <!-- Top Navigation Bar -->
+  <header class="sticky top-0 z-30 border-b border-gray-800/80 bg-[#090d16]/90 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400 font-bold">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+          </svg>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">Personal Portfolio</h1>
+            <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-800 text-gray-400 border border-gray-700">
+              Read-Only
+            </span>
+          </div>
+          <p id="last-updated" class="text-xs text-gray-400">Initializing market feed...</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button onclick="openBackupModal()" class="px-3 py-2 text-xs font-medium rounded-lg bg-gray-800/80 hover:bg-gray-800 text-gray-300 border border-gray-700/80 transition flex items-center gap-1.5" title="Sync or Backup Data">
+          <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"/>
+          </svg>
+          <span class="hidden md:inline">Sync / Backup</span>
+        </button>
+
+        <button onclick="openPositionModal()" class="px-3 py-2 text-xs font-medium rounded-lg bg-gray-800/80 hover:bg-gray-800 text-gray-200 border border-gray-700/80 transition flex items-center gap-1.5">
+          <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span>Add Position</span>
+        </button>
+
+        <button id="refresh-btn" onclick="refreshAllData()" class="px-3.5 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-950/50 transition flex items-center gap-1.5">
+          <svg id="refresh-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+          </svg>
+          <span>Refresh Prices</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Status Banner (for API fallback notices) -->
+    <div id="api-banner" class="hidden rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200 flex items-center justify-between gap-2">
+      <span id="api-banner-text"></span>
+      <button onclick="document.getElementById('api-banner').classList.add('hidden')" class="text-amber-300 hover:text-white font-semibold">Dismiss</button>
+    </div>
+
+    <!-- 1. Portfolio Summary Header Cards -->
+    <section class="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <!-- Total Portfolio Value -->
+      <div class="rounded-2xl bg-[#111827] border border-gray-800/90 p-5 shadow-xl">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium uppercase tracking-wider text-gray-400">Total Portfolio Value</span>
+          <span class="text-xs text-gray-500 font-mono" id="total-cost-label">Cost: $0.00</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-2">
+          <span id="card-total-value" class="text-3xl sm:text-4xl font-bold tracking-tight text-white font-mono tabular-nums">$0.00</span>
+        </div>
+        <div class="mt-2 text-xs text-gray-400">
+          Across <span id="card-position-count" class="text-gray-200 font-semibold">0</span> active holdings
+        </div>
+      </div>
+
+      <!-- Total Profit / Loss -->
+      <div class="rounded-2xl bg-[#111827] border border-gray-800/90 p-5 shadow-xl">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium uppercase tracking-wider text-gray-400">Total Profit / Loss</span>
+          <span class="text-xs text-gray-500">All-Time</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-3">
+          <span id="card-total-pl" class="text-3xl sm:text-4xl font-bold tracking-tight font-mono tabular-nums text-gray-200">$0.00</span>
+          <span id="card-total-pl-pct" class="px-2 py-0.5 rounded-md text-xs font-semibold font-mono tabular-nums bg-gray-800 text-gray-300">0.00%</span>
+        </div>
+        <div class="mt-2 text-xs text-gray-400">
+          Unrealized return vs. cost basis
+        </div>
+      </div>
+
+      <!-- Today's Gain / Loss -->
+      <div class="rounded-2xl bg-[#111827] border border-gray-800/90 p-5 shadow-xl">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-medium uppercase tracking-wider text-gray-400">Today's Gain / Loss</span>
+          <span class="text-xs text-gray-500">24h Change</span>
+        </div>
+        <div class="mt-2 flex items-baseline gap-3">
+          <span id="card-day-pl" class="text-3xl sm:text-4xl font-bold tracking-tight font-mono tabular-nums text-gray-200">$0.00</span>
+          <span id="card-day-pl-pct" class="px-2 py-0.5 rounded-md text-xs font-semibold font-mono tabular-nums bg-gray-800 text-gray-300">0.00%</span>
+        </div>
+        <div class="mt-2 text-xs text-gray-400">
+          Based on previous market close
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Interactive Charts Row -->
+    <section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <!-- Allocation Donut Chart -->
+      <div class="lg:col-span-5 rounded-2xl bg-[#111827] border border-gray-800/90 p-5 shadow-xl flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h2 class="text-sm font-semibold text-white">Portfolio Allocation</h2>
+            <p class="text-xs text-gray-400">Weight by current market value (%)</p>
+          </div>
+        </div>
+        <div class="relative flex-1 min-h-[250px] flex items-center justify-center">
+          <canvas id="allocationChart"></canvas>
+        </div>
+        <div id="allocation-legend" class="mt-4 grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs"></div>
+      </div>
+
+      <!-- Individual Stock Historical Performance Line Chart -->
+      <div class="lg:col-span-7 rounded-2xl bg-[#111827] border border-gray-800/90 p-5 shadow-xl flex flex-col">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <div class="flex items-center gap-2">
+              <h2 id="chart-stock-title" class="text-sm font-semibold text-white">NVDA — Performance</h2>
+              <span id="chart-stock-price" class="text-xs font-mono font-semibold text-emerald-400"></span>
+            </div>
+            <p class="text-xs text-gray-400">Click any stock in the table below to inspect its history</p>
+          </div>
+
+          <!-- Timeframe Selector -->
+          <div class="inline-flex rounded-lg bg-gray-900 p-1 border border-gray-800" id="timeframe-buttons">
+            <button data-range="1D" onclick="changeTimeframe('1D')" class="tf-btn px-2.5 py-1 rounded-md text-xs font-semibold transition text-gray-400 hover:text-white">1D</button>
+            <button data-range="1W" onclick="changeTimeframe('1W')" class="tf-btn px-2.5 py-1 rounded-md text-xs font-semibold transition text-gray-400 hover:text-white">1W</button>
+            <button data-range="1M" onclick="changeTimeframe('1M')" class="tf-btn px-2.5 py-1 rounded-md text-xs font-semibold transition bg-gray-800 text-white">1M</button>
+            <button data-range="1Y" onclick="changeTimeframe('1Y')" class="tf-btn px-2.5 py-1 rounded-md text-xs font-semibold transition text-gray-400 hover:text-white">1Y</button>
+          </div>
+        </div>
+
+        <div class="relative flex-1 min-h-[270px]">
+          <div id="chart-loader" class="hidden absolute inset-0 bg-[#111827]/70 backdrop-blur-[1px] z-10 flex items-center justify-center text-xs text-gray-300">
+            Loading chart data...
+          </div>
+          <canvas id="historyChart"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3. Sortable Holdings Table -->
+    <section class="rounded-2xl bg-[#111827] border border-gray-800/90 shadow-xl overflow-hidden">
+      <div class="px-5 py-4 border-b border-gray-800 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h2 class="text-sm font-semibold text-white">Holdings Breakdown</h2>
+          <p class="text-xs text-gray-400">Click column headers to sort • Click a row to view its chart</p>
+        </div>
+        <div class="text-xs text-gray-500">
+          Stored locally in your browser
+        </div>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-left border-collapse">
+          <thead>
+            <tr class="border-b border-gray-800/80 text-[11px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-900/40 select-none">
+              <th onclick="sortTable('ticker')" class="py-3.5 px-4 cursor-pointer hover:text-white transition">Ticker <span id="sort-ticker"></span></th>
+              <th onclick="sortTable('shares')" class="py-3.5 px-4 text-right cursor-pointer hover:text-white transition">Shares <span id="sort-shares"></span></th>
+              <th onclick="sortTable('avgCost')" class="py-3.5 px-4 text-right cursor-pointer hover:text-white transition">Avg Cost <span id="sort-avgCost"></span></th>
+              <th onclick="sortTable('currentPrice')" class="py-3.5 px-4 text-right cursor-pointer hover:text-white transition">Current Price <span id="sort-currentPrice"></span></th>
+              <th onclick="sortTable('marketValue')" class="py-3.5 px-4 text-right cursor-pointer hover:text-white transition">Market Value <span id="sort-marketValue"></span></th>
+              <th onclick="sortTable('dayChangePct')" class="py-3.5 px-4 text-right cursor-pointer hover:text-white transition">Daily Change <span id="sort-dayChangePct"></span></th>
+              <th onclick="sortTable('totalReturn')" class="py-3.5 px-4 text-right cursor-pointer hover:text-white transition">Total Return <span id="sort-totalReturn"></span></th>
+              <th class="py-3.5 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="holdings-tbody" class="divide-y divide-gray-800/60 text-sm">
+            <!-- Rows injected via JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Add / Edit Position Modal -->
+  <div id="position-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#111827] border border-gray-800 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-4">
+        <h3 id="modal-title" class="text-base font-bold text-white">Add Position</h3>
+        <button onclick="closePositionModal()" class="text-gray-400 hover:text-white">✕</button>
+      </div>
+      <form id="position-form" onsubmit="savePosition(event)" class="space-y-4">
+        <input type="hidden" id="edit-index" value="-1" />
+        <div>
+          <label class="block text-xs font-medium text-gray-300 mb-1">Ticker Symbol</label>
+          <input type="text" id="input-ticker" required placeholder="e.g. AAPL" class="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm uppercase font-mono focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-gray-300 mb-1">Company / Asset Name (Optional)</label>
+          <input type="text" id="input-name" placeholder="e.g. Apple Inc." class="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-gray-300 mb-1">Shares Owned</label>
+            <input type="number" step="any" min="0.000001" id="input-shares" required placeholder="0.50000" class="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm font-mono focus:outline-none focus:border-emerald-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-gray-300 mb-1">Average Cost ($)</label>
+            <input type="number" step="any" min="0.0001" id="input-cost" required placeholder="150.00" class="w-full px-3 py-2 rounded-lg bg-gray-900 border border-gray-700 text-white text-sm font-mono focus:outline-none focus:border-emerald-500" />
+          </div>
+        </div>
+        <div class="pt-2 flex items-center justify-end gap-2">
+          <button type="button" onclick="closePositionModal()" class="px-4 py-2 rounded-lg text-xs font-medium bg-gray-800 text-gray-300 hover:bg-gray-700">Cancel</button>
+          <button type="submit" class="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500">Save Position</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Sync / Backup Modal -->
+  <div id="backup-modal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#111827] border border-gray-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-white">Sync Across Devices / Backup</h3>
+        <button onclick="closeBackupModal()" class="text-gray-400 hover:text-white">✕</button>
+      </div>
+      <p class="text-xs text-gray-400">
+        Your positions are stored privately in your browser's <code class="text-gray-300">localStorage</code>. Copy this JSON to transfer updates between your computer and phone, or reset to your original Cash App receipt positions.
+      </p>
+      <textarea id="backup-json" rows="6" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-700 text-xs font-mono text-gray-200 focus:outline-none focus:border-emerald-500"></textarea>
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+        <button type="button" onclick="resetToDefaultPortfolio()" class="px-3 py-2 rounded-lg text-xs font-medium bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20">
+          Reset to Initial Cash App Data
+        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="copyBackupJson()" class="px-3 py-2 rounded-lg text-xs font-medium bg-gray-800 text-gray-200 hover:bg-gray-700">
+            Copy JSON
+          </button>
+          <button type="button" onclick="importBackupJson()" class="px-4 py-2 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-500">
+            Import & Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // =========================================================================
+    // 1. PRE-LOADED PORTFOLIO DATA (Extracted from Cash App Email Receipts)
+    // =========================================================================
+    const DEFAULT_PORTFOLIO = [
+      { ticker: 'NVDA', name: 'NVIDIA', shares: 0.32100, avgCost: 172.71 },
+      { ticker: 'INTC', name: 'Intel', shares: 0.43329, avgCost: 102.96 },
+      { ticker: 'VOO',  name: 'Vanguard S&P 500 ETF', shares: 0.05723, avgCost: 698.89 },
+      { ticker: 'FRMI', name: 'Fermi', shares: 6.12051, avgCost: 3.27 },
+      { ticker: 'OXY',  name: 'Occidental Petroleum', shares: 0.24961, avgCost: 60.09 },
+      { ticker: 'CRDO', name: 'Credo Technology Group', shares: 0.09283, avgCost: 161.57 },
+      { ticker: 'NXH',  name: 'Neighborhood Intelligence', shares: 6.04536, avgCost: 2.07 },
+      { ticker: 'UBER', name: 'Uber Technologies', shares: 0.14049, avgCost: 71.18 },
+      { ticker: 'PLTR', name: 'Palantir Technologies', shares: 0.05093, avgCost: 196.34 },
+      { ticker: 'MU',   name: 'Micron Technology', shares: 0.00481, avgCost: 1038.63 }
+    ];
+
+    const STORAGE_KEY = 'gavin_portfolio_v1';
+    const CHART_COLORS = [
+      '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899',
+      '#06b6d4', '#f97316', '#84cc16', '#6366f1', '#14b8a6'
+    ];
+
+    let portfolio = loadPortfolio();
+    let marketData = {}; // { TICKER: { price, prevClose, dayChange, dayChangePct, name } }
+    let selectedTicker = portfolio[0]?.ticker || 'NVDA';
+    let selectedRange = '1M';
+    let sortState = { column: 'marketValue', direction: 'desc' };
+
+    let allocationChartInstance = null;
+    let historyChartInstance = null;
+
+    // =========================================================================
+    // 2. LOCAL STORAGE & STATE HELPERS
+    // =========================================================================
+    function loadPortfolio() {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (e) {
+        console.warn('Failed to parse saved portfolio:', e);
+      }
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_PORTFOLIO));
+      return JSON.parse(JSON.stringify(DEFAULT_PORTFOLIO));
+    }
+
+    function savePortfolioToStorage() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
+    }
+
+    function formatCurrency(val) {
+      if (val === null || val === undefined || isNaN(val)) return '$0.00';
+      const sign = val < 0 ? '-' : '';
+      return sign + '$' + Math.abs(val).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function formatSignedCurrency(val) {
+      if (val === null || val === undefined || isNaN(val)) return '$0.00';
+      const sign = val > 0 ? '+' : (val < 0 ? '-' : '');
+      return sign + '$' + Math.abs(val).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+    }
+
+    function formatSignedPercent(val) {
+      if (val === null || val === undefined || isNaN(val)) return '0.00%';
+      const sign = val > 0 ? '+' : '';
+      return sign + val.toFixed(2) + '%';
+    }
+
+    // =========================================================================
+    // 3. LIVE & HISTORICAL MARKET DATA (Yahoo Finance via CORS Proxy Fallback)
+    // =========================================================================
+    async function fetchYahooChart(ticker, range = '5d', interval = '1d') {
+      const targetUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=${interval}`;
+      const proxies = [
+        `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`
+      ];
+
+      for (const proxyUrl of proxies) {
+        try {
+          const res = await fetch(proxyUrl);
+          if (!res.ok) continue;
+          const json = await res.json();
+          const result = json?.chart?.result?.[0];
+          if (result) return result;
+        } catch (err) {
+          // Try next proxy
+        }
+      }
+      return null;
+    }
+
+    async function fetchQuoteForTicker(item) {
+      const result = await fetchYahooChart(item.ticker, '5d', '1d');
+      if (result && result.meta) {
+        const meta = result.meta;
+        const price = meta.regularMarketPrice ?? item.avgCost;
+        const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? price;
+        const dayChange = price - prevClose;
+        const dayChangePct = prevClose > 0 ? (dayChange / prevClose) * 100 : 0;
+
+        marketData[item.ticker] = {
+          price,
+          prevClose,
+          dayChange,
+          dayChangePct,
+          name: item.name || meta.shortName || meta.symbol || item.ticker,
+          isFallback: false
+        };
+      } else {
+        // Fallback to cost basis if ticker isn't publicly listed on Yahoo Finance
+        marketData[item.ticker] = {
+          price: item.avgCost,
+          prevClose: item.avgCost,
+          dayChange: 0,
+          dayChangePct: 0,
+          name: item.name || item.ticker,
+          isFallback: true
+        };
+      }
+    }
+
+    async function refreshAllData() {
+      const icon = document.getElementById('refresh-icon');
+      icon.classList.add('animate-spin');
+      document.getElementById('last-updated').textContent = 'Fetching live market prices...';
+
+      await Promise.all(portfolio.map(item => fetchQuoteForTicker(item)));
+
+      const fallbackTickers = portfolio
+        .filter(p => marketData[p.ticker]?.isFallback)
+        .map(p => p.ticker);
+
+      const banner = document.getElementById('api-banner');
+      if (fallbackTickers.length > 0) {
+        document.getElementById('api-banner-text').textContent =
+          `Note: Live quote unavailable for ${fallbackTickers.join(', ')} (using average cost basis as fallback).`;
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+
+      const now = new Date();
+      document.getElementById('last-updated').textContent =
+        `Last updated: ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+
+      icon.classList.remove('animate-spin');
+      renderDashboard();
+      loadStockHistory(selectedTicker, selectedRange);
+    }
+
+    // =========================================================================
+    // 4. RENDER SUMMARY CARDS, TABLE & DONUT CHART
+    // =========================================================================
+    function getEnrichedPositions() {
+      return portfolio.map((pos, index) => {
+        const quote = marketData[pos.ticker] || {
+          price: pos.avgCost,
+          prevClose: pos.avgCost,
+          dayChange: 0,
+          dayChangePct: 0,
+          name: pos.name || pos.ticker
+        };
+
+        const costBasis = pos.shares * pos.avgCost;
+        const marketValue = pos.shares * quote.price;
+        const totalReturn = marketValue - costBasis;
+        const totalReturnPct = costBasis > 0 ? (totalReturn / costBasis) * 100 : 0;
+        const dayGainDollar = pos.shares * quote.dayChange;
+
+        return {
+          ...pos,
+          index,
+          displayName: pos.name || quote.name || pos.ticker,
+          currentPrice: quote.price,
+          dayChange: quote.dayChange,
+          dayChangePct: quote.dayChangePct,
+          costBasis,
+          marketValue,
+          totalReturn,
+          totalReturnPct,
+          dayGainDollar,
+          isFallback: quote.isFallback
+        };
+      });
+    }
+
+    function renderDashboard() {
+      const enriched = getEnrichedPositions();
+
+      // Summary Totals
+      const totalValue = enriched.reduce((sum, p) => sum + p.marketValue, 0);
+      const totalCost = enriched.reduce((sum, p) => sum + p.costBasis, 0);
+      const totalReturn = totalValue - totalCost;
+      const totalReturnPct = totalCost > 0 ? (totalReturn / totalCost) * 100 : 0;
+
+      const totalDayGain = enriched.reduce((sum, p) => sum + p.dayGainDollar, 0);
+      const prevTotalValue = totalValue - totalDayGain;
+      const totalDayPct = prevTotalValue > 0 ? (totalDayGain / prevTotalValue) * 100 : 0;
+
+      // Update Header Cards
+      document.getElementById('card-total-value').textContent = formatCurrency(totalValue);
+      document.getElementById('total-cost-label').textContent = `Cost: ${formatCurrency(totalCost)}`;
+      document.getElementById('card-position-count').textContent = enriched.length;
+
+      const totalPlEl = document.getElementById('card-total-pl');
+      const totalPlPctEl = document.getElementById('card-total-pl-pct');
+      totalPlEl.textContent = formatSignedCurrency(totalReturn);
+      totalPlPctEl.textContent = formatSignedPercent(totalReturnPct);
+      applyGainLossStyle(totalPlEl, totalPlPctEl, totalReturn);
+
+      const dayPlEl = document.getElementById('card-day-pl');
+      const dayPlPctEl = document.getElementById('card-day-pl-pct');
+      dayPlEl.textContent = formatSignedCurrency(totalDayGain);
+      dayPlPctEl.textContent = formatSignedPercent(totalDayPct);
+      applyGainLossStyle(dayPlEl, dayPlPctEl, totalDayGain);
+
+      renderTable(enriched);
+      renderAllocationChart(enriched, totalValue);
+    }
+
+    function applyGainLossStyle(amountEl, badgeEl, value) {
+      amountEl.classList.remove('text-emerald-400', 'text-rose-400', 'text-gray-200');
+      badgeEl.classList.remove('bg-emerald-500/15', 'text-emerald-400', 'bg-rose-500/15', 'text-rose-400', 'bg-gray-800', 'text-gray-300');
+
+      if (value > 0.004) {
+        amountEl.classList.add('text-emerald-400');
+        badgeEl.classList.add('bg-emerald-500/15', 'text-emerald-400');
+      } else if (value < -0.004) {
+        amountEl.classList.add('text-rose-400');
+        badgeEl.classList.add('bg-rose-500/15', 'text-rose-400');
+      } else {
+        amountEl.classList.add('text-gray-200');
+        badgeEl.classList.add('bg-gray-800', 'text-gray-300');
+      }
+    }
+
+    function sortTable(column) {
+      if (sortState.column === column) {
+        sortState.direction = sortState.direction === 'asc' ? 'desc' : 'asc';
+      } else {
+        sortState.column = column;
+        sortState.direction = column === 'ticker' ? 'asc' : 'desc';
+      }
+      renderDashboard();
+    }
+
+    function renderTable(enriched) {
+      // Update sort arrows
+      ['ticker', 'shares', 'avgCost', 'currentPrice', 'marketValue', 'dayChangePct', 'totalReturn'].forEach(col => {
+        const el = document.getElementById(`sort-${col}`);
+        if (el) el.textContent = sortState.column === col ? (sortState.direction === 'asc' ? '↑' : '↓') : '';
+      });
+
+      const sorted = [...enriched].sort((a, b) => {
+        const valA = a[sortState.column];
+        const valB = b[sortState.column];
+        if (typeof valA === 'string') {
+          return sortState.direction === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+        }
+        return sortState.direction === 'asc' ? valA - valB : valB - valA;
+      });
+
+      const tbody = document.getElementById('holdings-tbody');
+      tbody.innerHTML = sorted.map(pos => {
+        const isSelected = pos.ticker === selectedTicker;
+        const dayColor = pos.dayChangePct > 0.001 ? 'text-emerald-400' : (pos.dayChangePct < -0.001 ? 'text-rose-400' : 'text-gray-400');
+        const retColor = pos.totalReturn > 0.004 ? 'text-emerald-400' : (pos.totalReturn < -0.004 ? 'text-rose-400' : 'text-gray-300');
+
+        return `
+          <tr onclick="selectStock('${pos.ticker}')" class="cursor-pointer transition ${isSelected ? 'bg-emerald-500/10' : 'hover:bg-gray-800/40'}">
+            <td class="py-3.5 px-4">
+              <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-gray-800 border border-gray-700 flex items-center justify-center font-mono font-bold text-xs text-white">
+                  ${pos.ticker.slice(0, 4)}
+                </div>
+                <div>
+                  <div class="font-bold text-white font-mono">${pos.ticker}</div>
+                  <div class="text-xs text-gray-400 truncate max-w-[140px] sm:max-w-[200px]">${pos.displayName}</div>
+                </div>
+              </div>
+            </td>
+            <td class="py-3.5 px-4 text-right font-mono tabular-nums text-gray-200">${pos.shares.toFixed(5)}</td>
+            <td class="py-3.5 px-4 text-right font-mono tabular-nums text-gray-300">${formatCurrency(pos.avgCost)}</td>
+            <td class="py-3.5 px-4 text-right font-mono tabular-nums text-white font-medium">
+              ${formatCurrency(pos.currentPrice)}
+              ${pos.isFallback ? '<span class="block text-[10px] text-amber-400">Est.</span>' : ''}
+            </td>
+            <td class="py-3.5 px-4 text-right font-mono tabular-nums font-semibold text-white">${formatCurrency(pos.marketValue)}</td>
+            <td class="py-3.5 px-4 text-right font-mono tabular-nums font-medium ${dayColor}">${formatSignedPercent(pos.dayChangePct)}</td>
+            <td class="py-3.5 px-4 text-right font-mono tabular-nums ${retColor}">
+              <div class="font-semibold">${formatSignedCurrency(pos.totalReturn)}</div>
+              <div class="text-xs opacity-85">${formatSignedPercent(pos.totalReturnPct)}</div>
+            </td>
+            <td class="py-3.5 px-4 text-right" onclick="event.stopPropagation()">
+              <div class="inline-flex items-center gap-1">
+                <button onclick="openPositionModal(${pos.index})" class="p-1.5 rounded-lg text-gray-400 hover:text-white hover:bg-gray-800 transition" title="Edit Position">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+                  </svg>
+                </button>
+                <button onclick="deletePosition(${pos.index})" class="p-1.5 rounded-lg text-gray-400 hover:text-rose-400 hover:bg-gray-800 transition" title="Delete Position">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                  </svg>
+                </button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderAllocationChart(enriched, totalValue) {
+      const sorted = [...enriched].sort((a, b) => b.marketValue - a.marketValue);
+      const labels = sorted.map(p => p.ticker);
+      const values = sorted.map(p => p.marketValue);
+      const weights = sorted.map(p => totalValue > 0 ? (p.marketValue / totalValue) * 100 : 0);
+      const colors = sorted.map((_, idx) => CHART_COLORS[idx % CHART_COLORS.length]);
+
+      const ctx = document.getElementById('allocationChart').getContext('2d');
+      if (allocationChartInstance) allocationChartInstance.destroy();
+
+      allocationChartInstance = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels,
+          datasets: [{
+            data: values,
+            backgroundColor: colors,
+            borderColor: '#111827',
+            borderWidth: 2,
+            hoverOffset: 6
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '68%',
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#090d16',
+              borderColor: '#374151',
+              borderWidth: 1,
+              titleColor: '#fff',
+              bodyColor: '#d1d5db',
+              callbacks: {
+                label: (ctx) => {
+                  const val = ctx.parsed;
+                  const pct = weights[ctx.dataIndex].toFixed(1);
+                  return ` ${formatCurrency(val)} (${pct}%)`;
+                }
+              }
+            }
+          },
+          onClick: (_, elements) => {
+            if (elements.length > 0) {
+              const idx = elements[0].index;
+              selectStock(labels[idx]);
+            }
+          }
+        }
+      });
+
+      // Custom compact legend
+      const legendEl = document.getElementById('allocation-legend');
+      legendEl.innerHTML = sorted.map((p, idx) => `
+        <button onclick="selectStock('${p.ticker}')" class="flex items-center justify-between px-2 py-1 rounded bg-gray-900/70 hover:bg-gray-800 border border-gray-800/80 text-left transition">
+          <span class="flex items-center gap-1.5 truncate">
+            <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${colors[idx]}"></span>
+            <span class="font-mono font-semibold text-gray-200">${p.ticker}</span>
+          </span>
+          <span class="font-mono text-gray-400 ml-1">${weights[idx].toFixed(1)}%</span>
+        </button>
+      `).join('');
+    }
+
+    // =========================================================================
+    // 5. HISTORICAL PERFORMANCE LINE CHART (1D, 1W, 1M, 1Y)
+    // =========================================================================
+    function selectStock(ticker) {
+      selectedTicker = ticker;
+      renderDashboard();
+      loadStockHistory(ticker, selectedRange);
+    }
+
+    function changeTimeframe(range) {
+      selectedRange = range;
+      document.querySelectorAll('.tf-btn').forEach(btn => {
+        if (btn.dataset.range === range) {
+          btn.classList.add('bg-gray-800', 'text-white');
+          btn.classList.remove('text-gray-400');
+        } else {
+          btn.classList.remove('bg-gray-800', 'text-white');
+          btn.classList.add('text-gray-400');
+        }
+      });
+      loadStockHistory(selectedTicker, range);
+    }
+
+    async function loadStockHistory(ticker, rangeKey) {
+      const pos = portfolio.find(p => p.ticker === ticker);
+      const quote = marketData[ticker];
+      document.getElementById('chart-stock-title').textContent =
+        `${ticker}${pos?.name ? ' — ' + pos.name : ''}`;
+      document.getElementById('chart-stock-price').textContent =
+        quote ? formatCurrency(quote.price) : '';
+
+      const rangeMap = {
+        '1D': { range: '1d',  interval: '5m' },
+        '1W': { range: '5d',  interval: '30m' },
+        '1M': { range: '1mo', interval: '1d' },
+        '1Y': { range: '1y',  interval: '1wk' }
+      };
+
+      const cfg = rangeMap[rangeKey] || rangeMap['1M'];
+      const loader = document.getElementById('chart-loader');
+      loader.classList.remove('hidden');
+
+      const result = await fetchYahooChart(ticker, cfg.range, cfg.interval);
+      loader.classList.add('hidden');
+
+      let labels = [];
+      let prices = [];
+
+      if (result && result.timestamp && result.indicators?.quote?.[0]?.close) {
+        const timestamps = result.timestamp;
+        const closes = result.indicators.quote[0].close;
+
+        timestamps.forEach((ts, i) => {
+          if (closes[i] !== null && closes[i] !== undefined) {
+            const d = new Date(ts * 1000);
+            labels.push(
+              rangeKey === '1D'
+                ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                : d.toLocaleDateString([], { month: 'short', day: 'numeric' })
+            );
+            prices.push(closes[i]);
+          }
+        });
+      }
+
+      // Fallback flat line if historical data unavailable
+      if (prices.length === 0) {
+        const base = quote?.price || pos?.avgCost || 100;
+        labels = ['Start', 'Current'];
+        prices = [base, base];
+      }
+
+      const isUp = prices[prices.length - 1] >= prices[0];
+      const lineColor = isUp ? '#10b981' : '#f43f5e';
+      const fillColor = isUp ? 'rgba(16, 185, 129, 0.12)' : 'rgba(244, 63, 94, 0.12)';
+
+      const ctx = document.getElementById('historyChart').getContext('2d');
+      if (historyChartInstance) historyChartInstance.destroy();
+
+      historyChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            label: ticker,
+            data: prices,
+            borderColor: lineColor,
+            backgroundColor: fillColor,
+            borderWidth: 2,
+            fill: true,
+            tension: 0.25,
+            pointRadius: 0,
+            pointHoverRadius: 5,
+            pointHoverBackgroundColor: lineColor
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#090d16',
+              borderColor: '#374151',
+              borderWidth: 1,
+              titleColor: '#9ca3af',
+              bodyColor: '#fff',
+              bodyFont: { family: 'JetBrains Mono', weight: 'bold' },
+              callbacks: {
+                label: (ctx) => ` ${formatCurrency(ctx.parsed.y)}`
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#6b7280', maxTicksLimit: 7, font: { size: 11 } }
+            },
+            y: {
+              grid: { color: 'rgba(31, 41, 55, 0.6)' },
+              ticks: {
+                color: '#6b7280',
+                font: { family: 'JetBrains Mono', size: 11 },
+                callback: (val) => '$' + val.toLocaleString()
+              }
+            }
+          }
+        }
+      });
+    }
+
+    // =========================================================================
+    // 6. MANAGE POSITIONS (ADD / EDIT / DELETE) & BACKUP SYNC
+    // =========================================================================
+    function openPositionModal(index = -1) {
+      document.getElementById('edit-index').value = index;
+      if (index >= 0) {
+        const pos = portfolio[index];
+        document.getElementById('modal-title').textContent = `Edit ${pos.ticker}`;
+        document.getElementById('input-ticker').value = pos.ticker;
+        document.getElementById('input-name').value = pos.name || '';
+        document.getElementById('input-shares').value = pos.shares;
+        document.getElementById('input-cost').value = pos.avgCost;
+      } else {
+        document.getElementById('modal-title').textContent = 'Add New Position';
+        document.getElementById('position-form').reset();
+      }
+      document.getElementById('position-modal').classList.remove('hidden');
+    }
+
+    function closePositionModal() {
+      document.getElementById('position-modal').classList.add('hidden');
+    }
+
+    async function savePosition(event) {
+      event.preventDefault();
+      const index = parseInt(document.getElementById('edit-index').value, 10);
+      const ticker = document.getElementById('input-ticker').value.trim().toUpperCase();
+      const name = document.getElementById('input-name').value.trim();
+      const shares = parseFloat(document.getElementById('input-shares').value);
+      const avgCost = parseFloat(document.getElementById('input-cost').value);
+
+      if (!ticker || isNaN(shares) || isNaN(avgCost)) return;
+
+      const entry = { ticker, name, shares, avgCost };
+
+      if (index >= 0) {
+        portfolio[index] = entry;
+      } else {
+        // Merge if ticker already exists
+        const existingIdx = portfolio.findIndex(p => p.ticker === ticker);
+        if (existingIdx >= 0) {
+          const old = portfolio[existingIdx];
+          const totalShares = old.shares + shares;
+          const weightedCost = ((old.shares * old.avgCost) + (shares * avgCost)) / totalShares;
+          portfolio[existingIdx] = {
+            ticker,
+            name: name || old.name,
+            shares: parseFloat(totalShares.toFixed(6)),
+            avgCost: parseFloat(weightedCost.toFixed(4))
+          };
+        } else {
+          portfolio.push(entry);
+        }
+      }
+
+      savePortfolioToStorage();
+      closePositionModal();
+      selectedTicker = ticker;
+      await fetchQuoteForTicker(entry);
+      renderDashboard();
+      loadStockHistory(selectedTicker, selectedRange);
+    }
+
+    function deletePosition(index) {
+      const target = portfolio[index];
+      if (!target) return;
+      if (confirm(`Remove ${target.ticker} from your local portfolio?`)) {
+        portfolio.splice(index, 1);
+        savePortfolioToStorage();
+        if (selectedTicker === target.ticker) {
+          selectedTicker = portfolio[0]?.ticker || 'NVDA';
+        }
+        renderDashboard();
+        if (portfolio.length > 0) loadStockHistory(selectedTicker, selectedRange);
+      }
+    }
+
+    function openBackupModal() {
+      document.getElementById('backup-json').value = JSON.stringify(portfolio, null, 2);
+      document.getElementById('backup-modal').classList.remove('hidden');
+    }
+
+    function closeBackupModal() {
+      document.getElementById('backup-modal').classList.add('hidden');
+    }
+
+    function copyBackupJson() {
+      const textarea = document.getElementById('backup-json');
+      textarea.select();
+      navigator.clipboard.writeText(textarea.value);
+      alert('Portfolio JSON copied to clipboard!');
+    }
+
+    function importBackupJson() {
+      try {
+        const parsed = JSON.parse(document.getElementById('backup-json').value);
+        if (!Array.isArray(parsed)) throw new Error('Invalid format');
+        portfolio = parsed.map(item => ({
+          ticker: String(item.ticker).toUpperCase(),
+          name: item.name || '',
+          shares: Number(item.shares),
+          avgCost: Number(item.avgCost)
+        }));
+        savePortfolioToStorage();
+        closeBackupModal();
+        refreshAllData();
+      } catch (e) {
+        alert('Invalid JSON format. Please check your pasted data.');
+      }
+    }
+
+    function resetToDefaultPortfolio() {
+      if (confirm('Reset your dashboard back to the 10 positions from your Cash App email receipts?')) {
+        portfolio = JSON.parse(JSON.stringify(DEFAULT_PORTFOLIO));
+        savePortfolioToStorage();
+        closeBackupModal();
+        refreshAllData();
+      }
+    }
+
+    // =========================================================================
+    // 7. INITIALIZE ON PAGE LOAD
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', () => {
+      refreshAllData();
+    });
+  </script>
+</body>
+</html>
